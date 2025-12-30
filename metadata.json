@@ -1,0 +1,8 @@
+{
+  "name": "Niwaduwak - Our Eternal Memory",
+  "description": "A private, high-security romantic memory vault for couples to store photos, videos, and letters.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

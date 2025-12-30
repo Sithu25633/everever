@@ -1,0 +1,19 @@
+
+# COMPLETE VPS DEPLOYMENT GUIDE (GitHub Storage Edition)
+
+### 1. Requirements
+- A **Private** GitHub Repository.
+- A **GitHub Personal Access Token** with `repo` scope.
+
+### 2. Environment Setup
+When starting your app with PM2, you MUST provide your GitHub details:
+
+`pm2 start server.js --name "niwaduwak-backend" --env GITHUB_TOKEN="your_token_here" --env GITHUB_REPO="your_username/your_repo_name" --env JWT_SECRET="your_long_secure_secret"`
+
+### 3. Nginx Configuration
+(Same as before, ensures `/api` points to Node.js port 3000)
+
+### 4. How it works
+- **No local files**: The VPS acts only as a secure tunnel.
+- **Permanent**: If you delete the VPS, your memories stay safe in the Private GitHub Repo.
+- **Privacy**: Only the backend can see the token. The token never enters the `index.html` or `App.tsx`.
