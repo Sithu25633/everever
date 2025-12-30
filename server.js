@@ -16,6 +16,11 @@ const GITHUB_REPO = process.env.GITHUB_REPO;
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const SECRET_KEY = process.env.JWT_SECRET || 'love_is_eternal_kash_manika';
 
+// Error check for environment variables
+if (!GITHUB_TOKEN || !GITHUB_REPO) {
+  console.error("CRITICAL ERROR: GITHUB_TOKEN or GITHUB_REPO environment variables are missing!");
+}
+
 const ghApi = axios.create({
   baseURL: `https://api.github.com/repos/${GITHUB_REPO}/contents`,
   headers: {
@@ -26,6 +31,11 @@ const ghApi = axios.create({
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// SERVE FRONTEND (This part is key for VPS)
+// We assume you have run 'npm run build' and created a 'dist' folder
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
 
 async function getFile(filePath) {
   try {
@@ -55,29 +65,36 @@ const authenticate = (req, res, next) => {
   });
 };
 
-// --- STANDARD AUTH ---
+// API ROUTES
 app.post('/api/register', async (req, res) => {
-  const dbFile = await getFile('db.json');
-  let db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { account: null, letters: [] };
-  if (db.account) return res.status(400).json({ error: 'Account exists' });
-  const hashedPassword = await bcrypt.hash(req.body.password, 10);
-  db.account = { username: req.body.username, password: hashedPassword };
-  await saveFile('db.json', JSON.stringify(db, null, 2), 'Register account');
-  res.json({ success: true });
+  try {
+    const dbFile = await getFile('db.json');
+    let db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { account: null, letters: [] };
+    if (db.account) return res.status(400).json({ error: 'Account exists' });
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    db.account = { username: req.body.username, password: hashedPassword };
+    await saveFile('db.json', JSON.stringify(db, null, 2), 'Register account');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
-  const dbFile = await getFile('db.json');
-  if (!dbFile) return res.status(401).json({ error: 'No account found' });
-  const db = JSON.parse(Buffer.from(dbFile.content, 'base64').toString());
-  const { username, password } = req.body;
-  if (!db.account || db.account.username !== username) return res.status(401).json({ error: 'Invalid creds' });
-  const match = await bcrypt.compare(password, db.account.password);
-  if (!match) return res.status(401).json({ error: 'Invalid creds' });
-  res.json({ token: jwt.sign({ username }, SECRET_KEY) });
+  try {
+    const dbFile = await getFile('db.json');
+    if (!dbFile) return res.status(401).json({ error: 'No account found' });
+    const db = JSON.parse(Buffer.from(dbFile.content, 'base64').toString());
+    const { username, password } = req.body;
+    if (!db.account || db.account.username !== username) return res.status(401).json({ error: 'Invalid creds' });
+    const match = await bcrypt.compare(password, db.account.password);
+    if (!match) return res.status(401).json({ error: 'Invalid creds' });
+    res.json({ token: jwt.sign({ username }, SECRET_KEY) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-// --- MEDIA ---
 app.get('/api/memories/:type', authenticate, async (req, res) => {
   const { type } = req.params;
   const folder = req.query.folder || '';
@@ -112,9 +129,7 @@ app.post('/api/folders/:type', authenticate, async (req, res) => {
   try {
     await saveFile(folderPath, Buffer.from("").toString('base64'), `Create folder: ${name}`, true);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create folder' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Failed to create folder' }); }
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -131,47 +146,61 @@ app.post('/api/upload/:type', authenticate, upload.array('files'), async (req, r
   } catch (err) { res.status(500).json({ error: 'GitHub upload failed' }); }
 });
 
-// --- LETTERS ---
 app.get('/api/letters', authenticate, async (req, res) => {
-  const dbFile = await getFile('db.json');
-  const db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
-  res.json(db.letters || []);
+  try {
+    const dbFile = await getFile('db.json');
+    const db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
+    res.json(db.letters || []);
+  } catch (e) { res.json([]); }
 });
 
 app.post('/api/letters', authenticate, async (req, res) => {
-  const dbFile = await getFile('db.json');
-  let db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
-  const newLetter = { 
-    id: Date.now().toString(), 
-    title: req.body.title, 
-    content: req.body.content, 
-    date: new Date().toLocaleDateString() 
-  };
-  db.letters = db.letters || [];
-  db.letters.unshift(newLetter);
-  await saveFile('db.json', JSON.stringify(db, null, 2), 'New letter');
-  res.json(newLetter);
+  try {
+    const dbFile = await getFile('db.json');
+    let db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
+    const newLetter = { 
+      id: Date.now().toString(), 
+      title: req.body.title, 
+      content: req.body.content, 
+      date: new Date().toLocaleDateString() 
+    };
+    db.letters = db.letters || [];
+    db.letters.unshift(newLetter);
+    await saveFile('db.json', JSON.stringify(db, null, 2), 'New letter');
+    res.json(newLetter);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/stats', authenticate, async (req, res) => {
-  const dbFile = await getFile('db.json');
-  const db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
-  
-  let photoCount = 0;
-  let videoCount = 0;
-  
   try {
-    const pRes = await ghApi.get(`/photos?ref=${GITHUB_BRANCH}`);
-    photoCount = pRes.data.filter(i => i.type === 'file' && i.name !== '.keep').length;
-    const vRes = await ghApi.get(`/videos?ref=${GITHUB_BRANCH}`);
-    videoCount = vRes.data.filter(i => i.type === 'file' && i.name !== '.keep').length;
-  } catch (e) {}
-
-  res.json({ 
-    photos: photoCount, 
-    videos: videoCount, 
-    letters: db.letters?.length || 0 
-  });
+    const dbFile = await getFile('db.json');
+    const db = dbFile ? JSON.parse(Buffer.from(dbFile.content, 'base64').toString()) : { letters: [] };
+    let photoCount = 0;
+    let videoCount = 0;
+    try {
+      const pRes = await ghApi.get(`/photos?ref=${GITHUB_BRANCH}`);
+      photoCount = pRes.data.filter(i => i.type === 'file' && i.name !== '.keep').length;
+      const vRes = await ghApi.get(`/videos?ref=${GITHUB_BRANCH}`);
+      videoCount = vRes.data.filter(i => i.type === 'file' && i.name !== '.keep').length;
+    } catch (e) {}
+    res.json({ photos: photoCount, videos: videoCount, letters: db.letters?.length || 0 });
+  } catch (e) { res.json({ photos: 0, videos: 0, letters: 0 }); }
 });
 
-app.listen(PORT, () => console.log(`Secure GitHub Storage backend active at port ${PORT}`));
+// CATCH-ALL FOR REACT ROUTING
+// If any request doesn't match API, return the index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`
+  -----------------------------------------------
+  🚀 Niwaduwak Server is running!
+  -----------------------------------------------
+  🔗 URL: http://localhost:${PORT}
+  📁 Serving frontend from: ${distPath}
+  🛠 GITHUB REPO: ${GITHUB_REPO}
+  -----------------------------------------------
+  `);
+});
